@@ -31,6 +31,17 @@
     <div class="w-full max-w-3xl mx-auto p-2 sm:p-4">
       <form (ngSubmit)="sendMessage()" class="flex items-center gap-2 bg-stone-800 rounded-full p-2 shadow-inner">
         <app-image-upload (imageSelected)="onImageSelected($event)" [disabled]="isLoading()" />
+        
+        <button
+          type="button"
+          (click)="shareLocation()"
+          [disabled]="isLoading()"
+          class="text-stone-400 hover:text-amber-400 disabled:text-stone-600 disabled:cursor-not-allowed w-12 h-12 flex items-center justify-center transition-colors duration-200 flex-shrink-0"
+          aria-label="Podijeli trenutnu lokaciju"
+          title="Podijeli trenutnu lokaciju">
+          <i class="fa-solid fa-location-crosshairs fa-lg"></i>
+        </button>
+
         <button
           type="button"
           (click)="findLocalRestaurants()"
@@ -43,7 +54,8 @@
         <input
           #messageInput
           type="text"
-          [(ngModel)]="userInput"
+          [value]="userInput()"
+          (input)="onUserInput($event)"
           name="userInput"
           [disabled]="isLoading()"
           placeholder="Recite mi svoju lokaciju za početak..."
@@ -51,7 +63,7 @@
         />
         <button
           type="submit"
-          [disabled]="isLoading() || !userInput.trim()"
+          [disabled]="isLoading() || !userInput().trim()"
           class="bg-amber-500 hover:bg-amber-600 disabled:bg-stone-600 disabled:cursor-not-allowed text-white rounded-full w-12 h-12 flex items-center justify-center transition-colors duration-200 flex-shrink-0">
           <i class="fa-solid fa-paper-plane"></i>
         </button>
