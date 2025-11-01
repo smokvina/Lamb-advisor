@@ -1,0 +1,61 @@
+<div class="flex flex-col h-screen bg-cover bg-center" style="background-image: url('https://picsum.photos/seed/lamb/1920/1080');">
+  <div class="flex flex-col h-full bg-stone-900 bg-opacity-80 backdrop-blur-sm justify-center">
+    <header class="bg-black/30 shadow-lg p-4 text-center">
+      <h1 class="text-2xl sm:text-3xl font-bold text-amber-400 tracking-wider">
+        Lamb Advisor
+      </h1>
+      <p class="text-stone-300 text-sm">Vaš AI Sommelier za janjetinu i kozletinu</p>
+    </header>
+
+    <!-- Main chat area -->
+    <main #chatContainer class="overflow-y-auto w-full max-w-3xl mx-auto p-4">
+      <div class="space-y-4">
+          @for (message of messages(); track message.id) {
+            <app-chat-message [message]="message" />
+          }
+          @if (isLoading()) {
+            <div class="flex justify-center items-end gap-2">
+                <div class="bg-stone-700 rounded-lg p-3 max-w-lg">
+                    <div class="flex items-center justify-center space-x-2">
+                        <div class="w-2 h-2 rounded-full bg-stone-400 animate-pulse [animation-delay:-0.3s]"></div>
+                        <div class="w-2 h-2 rounded-full bg-stone-400 animate-pulse [animation-delay:-0.15s]"></div>
+                        <div class="w-2 h-2 rounded-full bg-stone-400 animate-pulse"></div>
+                    </div>
+                </div>
+            </div>
+          }
+      </div>
+    </main>
+
+    <!-- Form area -->
+    <div class="w-full max-w-3xl mx-auto p-2 sm:p-4">
+      <form (ngSubmit)="sendMessage()" class="flex items-center gap-2 bg-stone-800 rounded-full p-2 shadow-inner">
+        <app-image-upload (imageSelected)="onImageSelected($event)" [disabled]="isLoading()" />
+        <button
+          type="button"
+          (click)="findLocalRestaurants()"
+          [disabled]="isLoading() || !userLocation()"
+          class="text-stone-400 hover:text-amber-400 disabled:text-stone-600 disabled:cursor-not-allowed w-12 h-12 flex items-center justify-center transition-colors duration-200 flex-shrink-0"
+          aria-label="Pronađi lokalne restorane"
+          title="Pronađi lokalne restorane">
+          <i class="fa-solid fa-utensils fa-lg"></i>
+        </button>
+        <input
+          #messageInput
+          type="text"
+          [(ngModel)]="userInput"
+          name="userInput"
+          [disabled]="isLoading()"
+          placeholder="Recite mi svoju lokaciju za početak..."
+          class="flex-1 bg-transparent text-stone-200 placeholder-stone-400 focus:outline-none px-4 py-2 text-center placeholder:text-center"
+        />
+        <button
+          type="submit"
+          [disabled]="isLoading() || !userInput.trim()"
+          class="bg-amber-500 hover:bg-amber-600 disabled:bg-stone-600 disabled:cursor-not-allowed text-white rounded-full w-12 h-12 flex items-center justify-center transition-colors duration-200 flex-shrink-0">
+          <i class="fa-solid fa-paper-plane"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,19 @@
+@if (message().sender === 'ai') {
+<div class="flex justify-center">
+    <div class="bg-stone-700 rounded-lg p-3 max-w-[90%] sm:max-w-lg shadow-lg">
+        <div class="text-stone-200 whitespace-pre-wrap text-center" [innerHTML]="renderMarkdown(message().text)"></div>
+        @if (message().imageUrl) {
+            <img [src]="message().imageUrl" alt="Generated dish" class="mt-3 rounded-lg shadow-md max-w-full h-auto" />
+        }
+    </div>
+</div>
+} @else {
+<div class="flex justify-center">
+    <div class="bg-amber-600 text-white rounded-lg p-3 max-w-[90%] sm:max-w-lg shadow-lg">
+        <p class="whitespace-pre-wrap text-center">{{ message().text }}</p>
+        @if (message().imageUrl) {
+            <img [src]="message().imageUrl" alt="User uploaded dish" class="mt-3 rounded-lg shadow-md max-w-full h-auto" />
+        }
+    </div>
+</div>
+}
