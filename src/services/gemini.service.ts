@@ -53,7 +53,7 @@ MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
 
   async generateCulinaryAnalysis(location: string): Promise<string> {
     const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: [{ role: 'user', parts: [{ text: location }] }],
         config: {
             systemInstruction: this.CULINARY_SYSTEM_INSTRUCTION,
@@ -64,7 +64,7 @@ MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
 
   async findRestaurants(chatHistory: ChatMessage[]): Promise<string> {
       const response: GenerateContentResponse = await this.ai.models.generateContent({
-          model: 'gemini-2.5-flash-lite',
+          model: 'gemini-2.5-flash',
           contents: chatHistory,
           config: {
               systemInstruction: this.RESTAURANT_SYSTEM_INSTRUCTION,
@@ -76,10 +76,11 @@ MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
 
   async continueChat(chatHistory: ChatMessage[]): Promise<string> {
     const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: chatHistory,
         config: {
-            systemInstruction: this.CHAT_SYSTEM_INSTRUCTION
+            systemInstruction: this.CHAT_SYSTEM_INSTRUCTION,
+            tools: [{googleSearch: {}}]
         }
     });
     return response.text ?? '';
@@ -95,7 +96,7 @@ MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
     const textPart: Part = { text: prompt };
 
     const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+        model: 'gemini-2.5-flash',
         contents: { parts: [textPart, imagePart] },
         config: {
             systemInstruction: this.IMAGE_ANALYSIS_SYSTEM_INSTRUCTION
