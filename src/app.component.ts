@@ -21,6 +21,8 @@ export class AppComponent {
   userInput = signal('');
   isLoading = signal(false);
   userLocation = signal<string | null>(null);
+  awaitingLocationConfirmation = signal(false);
+  private confirmedLocation = signal<string | null>(null);
   
   private conversationStarted = false;
   private chatHistory: ChatMessage[] = [];
@@ -47,7 +49,28 @@ export class AppComponent {
     this.scrollToBottom();
 
     try {
-      if (!this.conversationStarted) {
+      if (this.awaitingLocationConfirmation()) {
+        this.awaitingLocationConfirmation.set(false);
+        let locationToSearch = '';
+        
+        if (capturedMessage.toLowerCase() === 'da' || capturedMessage.toLowerCase() === 'yes') {
+            locationToSearch = this.confirmedLocation()!;
+        } else {
+            locationToSearch = capturedMessage; 
+        }
+
+        this.messages.update(current => {
+            const lastMessage = current[current.length - 1];
+            if (lastMessage.sender === 'user') {
+                lastMessage.text = locationToSearch;
+            }
+            return [...current];
+        });
+
+        await this.handleInitialQuery(locationToSearch);
+        this.conversationStarted = true;
+
+      } else if (!this.conversationStarted) {
         await this.handleInitialQuery(capturedMessage);
         this.conversationStarted = true;
       } else {
@@ -113,22 +136,39 @@ export class AppComponent {
           maximumAge: 0
         });
       });
-
-      const { latitude, longitude } = position.coords;
-      const locationString = `Lat: ${latitude.toFixed(5)}, Lng: ${longitude.toFixed(5)}`;
       
       this.messages.update(current => {
           const lastMessage = current[current.length - 1];
           if (lastMessage.sender === 'user') {
-              lastMessage.text = `Lokacija podijeljena: ${locationString}`;
+              lastMessage.text = 'Lokacija podijeljena. Pronalazim ime mjesta...';
+          }
+          return [...current];
+      });
+      this.cdr.detectChanges();
+
+      const { latitude, longitude } = position.coords;
+      const geoResponse = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`);
+      if (!geoResponse.ok) throw new Error('Reverse geocoding request failed.');
+      
+      const geoData = await geoResponse.json();
+      const locationName = geoData.address.city || geoData.address.town || geoData.address.village || geoData.address.county || 'nepoznata lokacija';
+
+      this.confirmedLocation.set(locationName);
+      this.awaitingLocationConfirmation.set(true);
+
+      const confirmationMessage = `Čini se da se nalazite u mjestu: **${locationName}**. Je li to točno?\n\nUpišite "da" za potvrdu ili unesite ispravnu lokaciju.`;
+      this.addAiMessage(confirmationMessage);
+      this.userInput.set('');
+
+    } catch (error: any) {
+      this.messages.update(current => {
+          const lastMessage = current[current.length - 1];
+          if (lastMessage.sender === 'user') {
+              lastMessage.text = 'Neuspješno dijeljenje lokacije.';
           }
           return [...current];
       });
 
-      await this.handleInitialQuery(locationString);
-      this.conversationStarted = true;
-
-    } catch (error: any) {
       let errorMessage = 'Nije moguće dohvatiti lokaciju. Molimo provjerite dozvole u pregledniku.';
       if (error.code === 1) { // PERMISSION_DENIED
         errorMessage = 'Dozvola za pristup lokaciji je odbijena. Molimo omogućite je u postavkama preglednika.';
@@ -136,34 +176,13 @@ export class AppComponent {
         errorMessage = 'Lokacija trenutno nije dostupna. Provjerite mrežnu vezu ili GPS signal.';
       } else if (error.code === 3) { // TIMEOUT
         errorMessage = 'Isteklo je vrijeme za dohvaćanje lokacije. Molimo pokušajte ponovno.';
+      } else if (error.message) {
+        errorMessage = `Došlo je do pogreške pri određivanju lokacije: ${error.message}`;
       }
       this.addAiMessage(errorMessage);
     } finally {
       this.isLoading.set(false);
       this.cdr.detectChanges();
-      this.scrollToBottom();
-    }
-  }
-  
-  async findLocalRestaurants(): Promise<void> {
-    if (this.isLoading() || !this.userLocation()) return;
-
-    const userMessage = "Pronađi najbolje restorane u mojoj blizini koji poslužuju lokalne specijalitete o kojima smo pričali.";
-    this.addUserMessage(userMessage);
-    this.isLoading.set(true);
-    this.scrollToBottom();
-
-    this.chatHistory.push({ role: 'user', parts: [{ text: userMessage }] });
-
-    try {
-      const response = await this.geminiService.findRestaurants(this.chatHistory);
-      this.addAiMessage(response, 'restaurants');
-      this.chatHistory.push({ role: 'model', parts: [{ text: response }] });
-    } catch (error) {
-      console.error('Error finding restaurants:', error);
-      this.addAiMessage('Ispričavam se, došlo je do pogreške pri traženju restorana. Molimo pokušajte ponovno.');
-    } finally {
-      this.isLoading.set(false);
       this.scrollToBottom();
     }
   }

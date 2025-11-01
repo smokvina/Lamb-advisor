@@ -42,15 +42,6 @@
           <i class="fa-solid fa-location-crosshairs fa-lg"></i>
         </button>
 
-        <button
-          type="button"
-          (click)="findLocalRestaurants()"
-          [disabled]="isLoading() || !userLocation()"
-          class="text-stone-400 hover:text-amber-400 disabled:text-stone-600 disabled:cursor-not-allowed w-12 h-12 flex items-center justify-center transition-colors duration-200 flex-shrink-0"
-          aria-label="Pronađi lokalne restorane"
-          title="Pronađi lokalne restorane">
-          <i class="fa-solid fa-utensils fa-lg"></i>
-        </button>
         <input
           #messageInput
           type="text"
@@ -58,7 +49,7 @@
           (input)="onUserInput($event)"
           name="userInput"
           [disabled]="isLoading()"
-          placeholder="Recite mi svoju lokaciju za početak..."
+          [placeholder]="awaitingLocationConfirmation() ? 'Upišite \'da\' ili ispravnu lokaciju...' : 'Upišite Grad/Država da Vam pronađemo Janjetinu.'"
           class="flex-1 bg-transparent text-stone-200 placeholder-stone-400 focus:outline-none px-4 py-2 text-center placeholder:text-center"
         />
         <button
