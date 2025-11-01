@@ -31,7 +31,7 @@ export class AppComponent implements AfterViewChecked {
     this.messages.set([{
       id: Date.now(),
       sender: 'ai',
-      text: "Dobrodošli u Lamb Advisor! Ja sam vaš osobni AI gurman, spreman istražiti najbolja svjetska jela od janjetine i kozletine. Da bismo započeli naše kulinarsko putovanje, molim vas, recite mi svoju trenutnu lokaciju."
+      text: "Dobrodošli u Lamb Advisor! Ja sam vaš osobni AI gurman, spreman u Vašoj okolici prije svega pronaći Pečenu janjetinu na ražnju pa nakon toga istražiti najbolja svjetska jela od janjetine i kozletine. Da bismo započeli naše kulinarsko putovanje, molim vas, recite mi svoju trenutnu lokaciju."
     }]);
   }
 
@@ -101,7 +101,7 @@ export class AppComponent implements AfterViewChecked {
 
     try {
       const response = await this.geminiService.findRestaurants(this.chatHistory);
-      this.addAiMessage(response);
+      this.addAiMessage(response, 'restaurants');
       this.chatHistory.push({ role: 'model', parts: [{ text: response }] });
     } catch (error) {
       console.error('Error finding restaurants:', error);
@@ -116,19 +116,24 @@ export class AppComponent implements AfterViewChecked {
     this.userLocation.set(location);
     this.chatHistory.push({ role: 'user', parts: [{ text: location }] });
     
-    // --- Step 1: Culinary Analysis ---
+    // Step 1: Culinary Analysis
     const analysis = await this.geminiService.generateCulinaryAnalysis(location);
-    const { text, imagePrompt } = this.parseAnalysis(analysis);
-
-    this.addAiMessage(text);
     this.chatHistory.push({ role: 'model', parts: [{ text: analysis }] });
-    
-    // --- Step 2: Image Generation (non-blocking) ---
+    const { text: analysisText, imagePrompt } = this.parseAnalysis(analysis);
+
+    // Step 2: Find Restaurants
+    const restaurantResponse = await this.geminiService.findRestaurants(this.chatHistory);
+    this.chatHistory.push({ role: 'model', parts: [{ text: restaurantResponse }] });
+
+    // Step 3: Combine and Display
+    const combinedText = analysisText + "\n\n" + restaurantResponse;
+    this.addAiMessage(combinedText, 'restaurants');
+
+    // Step 4: Image Generation (non-blocking)
     if (imagePrompt) {
-        // This will run in the background and update the message when done.
         this.geminiService.generateDishImage(imagePrompt).then(imageUrl => {
             this.messages.update(current => {
-                const analysisMessage = current.find(m => m.text === text);
+                const analysisMessage = current.find(m => m.text.startsWith(analysisText));
                 if (analysisMessage) {
                     analysisMessage.imageUrl = imageUrl;
                 }
@@ -137,35 +142,24 @@ export class AppComponent implements AfterViewChecked {
             this.cdr.detectChanges();
         }).catch(e => {
             console.error("Image generation failed", e);
-            // Optionally add a message about image failure
         });
-    }
-
-    // --- Step 3: Find Restaurants (blocking) ---
-    try {
-        const restaurantResponse = await this.geminiService.findRestaurants(this.chatHistory);
-        this.addAiMessage(restaurantResponse);
-        this.chatHistory.push({ role: 'model', parts: [{ text: restaurantResponse }] });
-    } catch (error) {
-        console.error('Error finding restaurants during initial query:', error);
-        this.addAiMessage('Ispričavam se, došlo je do pogreške pri traženju restorana. Možete pokušati ponovno koristeći gumb za restorane.');
     }
   }
 
   private async handleFollowUpQuery(message: string): Promise<void> {
     this.chatHistory.push({ role: 'user', parts: [{ text: message }] });
 
-    // Simple intent detection for finding restaurants
     const isRestaurantQuery = ['restoran', 'pronađi', 'nađi', 'gdje', 'pokaži', 'da', 'molim'].some(keyword => message.toLowerCase().includes(keyword));
 
     let response: string;
     try {
       if (isRestaurantQuery && this.userLocation()) {
         response = await this.geminiService.findRestaurants(this.chatHistory);
+        this.addAiMessage(response, 'restaurants');
       } else {
         response = await this.geminiService.continueChat(this.chatHistory);
+        this.addAiMessage(response);
       }
-      this.addAiMessage(response);
       this.chatHistory.push({ role: 'model', parts: [{ text: response }] });
     } catch (error) {
       console.error('Error in follow-up query:', error);
@@ -177,8 +171,8 @@ export class AppComponent implements AfterViewChecked {
     this.messages.update(current => [...current, { id: Date.now(), sender: 'user', text }]);
   }
 
-  private addAiMessage(text: string): void {
-    this.messages.update(current => [...current, { id: Date.now(), sender: 'ai', text }]);
+  private addAiMessage(text: string, messageType: 'text' | 'restaurants' = 'text'): void {
+    this.messages.update(current => [...current, { id: Date.now(), sender: 'ai', text, messageType }]);
   }
 
   private parseAnalysis(text: string): { text: string, imagePrompt: string | null } {

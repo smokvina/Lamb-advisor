@@ -3,7 +3,7 @@ export interface Message {
     sender: 'user' | 'ai';
     text: string;
     imageUrl?: string;
-    // We could add more properties here for things like restaurant lists
+    messageType?: 'text' | 'restaurants';
 }
 
 // Re-exporting from @google/genai for convenience in services
