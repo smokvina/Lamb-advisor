@@ -1,9 +1,12 @@
 import { Component, ChangeDetectionStrategy, signal, inject, ChangeDetectorRef, viewChild, ElementRef, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { GeminiService, type RestaurantFilters } from './services/gemini.service';
+import { GeminiService } from './services/gemini.service';
 import { ChatMessage, Message } from './models/chat.model';
 import { ChatMessageComponent } from './components/chat-message/chat-message.component';
+import { FavoritesService } from './services/favorites.service';
+import { SearchHistoryService } from './services/search-history.service';
+import { type SearchHistoryItem, type RestaurantFilters } from './models/search-history.model';
 
 @Component({
   selector: 'app-root',
@@ -15,6 +18,8 @@ import { ChatMessageComponent } from './components/chat-message/chat-message.com
 export class AppComponent {
   private geminiService = inject(GeminiService);
   private cdr = inject(ChangeDetectorRef);
+  private favoritesService = inject(FavoritesService);
+  private historyService = inject(SearchHistoryService);
 
   messages = signal<Message[]>([]);
   userInput = signal('');
@@ -185,6 +190,44 @@ export class AppComponent {
     }
   }
 
+  showFavorites(): void {
+    const favorites = this.favoritesService.getFavorites();
+    if (favorites.length === 0) {
+      this.addAiMessage('Trenutno nemate spremljenih omiljenih restorana.');
+      return;
+    }
+
+    const favoritesAsJson = {
+      introduction: "Evo popisa vaših omiljenih restorana za brzi pristup.",
+      roasteries: [],
+      specializedRestaurants: [],
+      otherRestaurants: favorites
+    };
+    
+    this.addAiMessage(JSON.stringify(favoritesAsJson), 'restaurants');
+    this.scrollToBottom();
+  }
+  
+  showHistory(): void {
+    const history = this.historyService.getHistory();
+    if (history.length === 0) {
+        this.addAiMessage('Nemate povijest pretraga.');
+        return;
+    }
+    this.addAiMessage('Povijest pretraga', 'history', history);
+    this.scrollToBottom();
+  }
+
+  rerunSearch(item: SearchHistoryItem): void {
+    this.priceRange.set(item.filters.price);
+    this.minRating.set(item.filters.rating);
+    this.cuisineType.set(item.filters.cuisine);
+    this.userInput.set(item.location);
+    // Clear conversation history to start a fresh search
+    this.conversationStarted = false;
+    this.sendMessage();
+  }
+
   toggleFilters(): void {
     this.showFilters.update(v => !v);
   }
@@ -203,7 +246,7 @@ export class AppComponent {
 
   private async handleInitialQuery(location: string): Promise<void> {
     this.userLocation.set(location);
-    this.chatHistory.push({ role: 'user', parts: [{ text: location }] });
+    this.chatHistory = [{ role: 'user', parts: [{ text: location }] }];
     
     const filters: RestaurantFilters = {
       price: this.priceRange(),
@@ -211,11 +254,24 @@ export class AppComponent {
       cuisine: this.cuisineType(),
     };
     
-    const restaurants = await this.geminiService.findRestaurants(this.chatHistory, filters);
-    
-    this.chatHistory.push({ role: 'model', parts: [{ text: restaurants }] });
+    const restaurantsJson = await this.geminiService.findRestaurants(this.chatHistory, filters);
 
-    this.addAiMessage(restaurants, 'restaurants');
+    try {
+        const parsed = JSON.parse(restaurantsJson);
+        if (parsed.roasteries?.length > 0 || parsed.specializedRestaurants?.length > 0 || parsed.otherRestaurants?.length > 0) {
+             this.historyService.addSearch({
+                id: Date.now(),
+                location: location,
+                filters: filters
+             });
+        }
+    } catch(e) { 
+        console.warn('AI returned non-JSON, likely an error message. Not saving to history.');
+    }
+    
+    this.chatHistory.push({ role: 'model', parts: [{ text: restaurantsJson }] });
+
+    this.addAiMessage(restaurantsJson, 'restaurants');
     this.cdr.detectChanges();
     this.scrollToBottom();
   }
@@ -223,16 +279,10 @@ export class AppComponent {
   private async handleFollowUpQuery(message: string): Promise<void> {
     this.chatHistory.push({ role: 'user', parts: [{ text: message }] });
 
-    const filters: RestaurantFilters = {
-      price: this.priceRange(),
-      rating: this.minRating(),
-      cuisine: this.cuisineType(),
-    };
-
     try {
-      const restaurants = await this.geminiService.findRestaurants(this.chatHistory, filters);
-      this.addAiMessage(restaurants, 'restaurants');
-      this.chatHistory.push({ role: 'model', parts: [{ text: restaurants }] });
+      const response = await this.geminiService.generalChat(this.chatHistory);
+      this.addAiMessage(response, 'text');
+      this.chatHistory.push({ role: 'model', parts: [{ text: response }] });
     } catch (error) {
       console.error('Error in follow-up query:', error);
       this.addAiMessage('Ispričavam se, naišao sam na problem prilikom obrade vašeg zahtjeva. Molimo pokušajte ponovno.');
@@ -243,9 +293,9 @@ export class AppComponent {
     this.messages.update(current => [...current, { id: Date.now(), sender: 'user', text }]);
   }
 
-  private addAiMessage(text: string, messageType: 'text' | 'restaurants' = 'text'): void {
+  private addAiMessage(text: string, messageType: 'text' | 'restaurants' | 'history' = 'text', historyItems?: SearchHistoryItem[]): void {
     const messageText = text ?? '';
-    this.messages.update(current => [...current, { id: Date.now(), sender: 'ai', text: messageText, messageType }]);
+    this.messages.update(current => [...current, { id: Date.now(), sender: 'ai', text: messageText, messageType, historyItems }]);
   }
 
   private scrollToBottom(): void {
