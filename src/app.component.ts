@@ -1,17 +1,16 @@
-import { Component, ChangeDetectionStrategy, signal, inject, ChangeDetectorRef, viewChild, ElementRef } from '@angular/core';
+import { Component, ChangeDetectionStrategy, signal, inject, ChangeDetectorRef, viewChild, ElementRef, computed } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { GeminiService } from './services/gemini.service';
+import { GeminiService, type RestaurantFilters } from './services/gemini.service';
 import { ChatMessage, Message } from './models/chat.model';
 import { ChatMessageComponent } from './components/chat-message/chat-message.component';
-import { ImageUploadComponent } from './components/image-upload/image-upload.component';
 
 @Component({
   selector: 'app-root',
   templateUrl: './app.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
   standalone: true,
-  imports: [CommonModule, FormsModule, ChatMessageComponent, ImageUploadComponent]
+  imports: [CommonModule, FormsModule, ChatMessageComponent]
 })
 export class AppComponent {
   private geminiService = inject(GeminiService);
@@ -24,11 +23,36 @@ export class AppComponent {
   awaitingLocationConfirmation = signal(false);
   private confirmedLocation = signal<string | null>(null);
   
+  showFilters = signal(false);
+  priceRange = signal('any');
+  minRating = signal(0);
+  cuisineType = signal('pečenu janjetinu na ražnju');
+
+  readonly priceOptions = [
+    { label: '$', value: '$' },
+    { label: '$$', value: '$$' },
+    { label: '$$$', value: '$$$' },
+    { label: 'Sve', value: 'any' },
+  ];
+  readonly ratingOptions = [
+    { label: '4.5★+', value: 4.5 },
+    { label: '4★+', value: 4 },
+    { label: '3★+', value: 3 },
+    { label: 'Sve', value: 0 },
+  ];
+  
   private conversationStarted = false;
   private chatHistory: ChatMessage[] = [];
 
   chatContainer = viewChild<ElementRef>('chatContainer');
   messageInput = viewChild<ElementRef>('messageInput');
+
+  placeholderText = computed(() => {
+    if (this.awaitingLocationConfirmation()) {
+      return 'Upišite "da" ili ispravnu lokaciju...';
+    }
+    return 'Upišite Grad/Država da Vam pronađemo Janjetinu.';
+  });
 
   constructor() {
     this.messages.set([{
@@ -89,32 +113,6 @@ export class AppComponent {
   
   onUserInput(event: Event): void {
     this.userInput.set((event.target as HTMLInputElement).value);
-  }
-
-  async onImageSelected(base64Image: string): Promise<void> {
-    if (this.isLoading()) return;
-    
-    this.messages.update(current => [...current, {
-        id: Date.now(),
-        sender: 'user',
-        text: 'Što mislite o ovom jelu?',
-        imageUrl: `data:image/jpeg;base64,${base64Image}`
-    }]);
-    this.scrollToBottom();
-    
-    this.isLoading.set(true);
-
-    try {
-        const prompt = "Analizirajte jelo na slici. Ako ga prepoznate, navedite njegovo ime. Opišite njegove vjerojatne sastojke, pripremu i okuse na primamljiv način. Usporedite ga s dalmatinskom janjetinom, bilo izravno (ako je janjetina) ili metaforički (ako je drugo jelo). Obavezno uključite i neku zanimljivu povijesnu priču ili zabavnu činjenicu o tom jelu kako biste oduševili korisnika.";
-        const response = await this.geminiService.analyzeImage(base64Image, prompt);
-        this.addAiMessage(response);
-    } catch(error) {
-        console.error('Error analyzing image:', error);
-        this.addAiMessage('Žao mi je, nisam uspio analizirati ovu sliku. Molimo pokušajte s drugom.');
-    } finally {
-        this.isLoading.set(false);
-        this.scrollToBottom();
-    }
   }
 
   async shareLocation(): Promise<void> {
@@ -187,55 +185,54 @@ export class AppComponent {
     }
   }
 
+  toggleFilters(): void {
+    this.showFilters.update(v => !v);
+  }
+
+  setPriceRange(price: string): void {
+    this.priceRange.set(price);
+  }
+
+  setMinRating(rating: number): void {
+    this.minRating.set(rating);
+  }
+
+  onCuisineInput(event: Event): void {
+    this.cuisineType.set((event.target as HTMLInputElement).value);
+  }
+
   private async handleInitialQuery(location: string): Promise<void> {
     this.userLocation.set(location);
     this.chatHistory.push({ role: 'user', parts: [{ text: location }] });
     
-    // Steps 1 & 3: Get culinary analysis and restaurants in parallel
-    const [analysis, restaurants] = await Promise.all([
-      this.geminiService.generateCulinaryAnalysis(location),
-      this.geminiService.findRestaurants(this.chatHistory)
-    ]);
+    const filters: RestaurantFilters = {
+      price: this.priceRange(),
+      rating: this.minRating(),
+      cuisine: this.cuisineType(),
+    };
     
-    this.chatHistory.push({ role: 'model', parts: [{ text: analysis }] });
+    const restaurants = await this.geminiService.findRestaurants(this.chatHistory, filters);
+    
     this.chatHistory.push({ role: 'model', parts: [{ text: restaurants }] });
 
-    const { text: analysisText, imagePrompt } = this.parseAnalysis(analysis);
-
-    // Combine messages for a single response bubble
-    const combinedMessage = `${analysisText}\n\n<hr>\n\n### Evo preporuka restorana:\n\n${restaurants}`;
-
-    // Add combined message
-    this.addAiMessage(combinedMessage, 'restaurants');
+    this.addAiMessage(restaurants, 'restaurants');
     this.cdr.detectChanges();
     this.scrollToBottom();
-
-    // Step 2: Image Generation (non-blocking)
-    if (imagePrompt) {
-        this.geminiService.generateDishImage(imagePrompt).then(imageUrl => {
-            this.messages.update(current => {
-                const lastMessage = current[current.length - 1];
-                if (lastMessage && lastMessage.sender === 'ai') {
-                    lastMessage.imageUrl = imageUrl;
-                }
-                return [...current];
-            });
-            this.cdr.detectChanges();
-            this.scrollToBottom();
-        }).catch(e => {
-            console.error("Image generation failed", e);
-        });
-    }
   }
 
   private async handleFollowUpQuery(message: string): Promise<void> {
     this.chatHistory.push({ role: 'user', parts: [{ text: message }] });
 
-    let response: string;
+    const filters: RestaurantFilters = {
+      price: this.priceRange(),
+      rating: this.minRating(),
+      cuisine: this.cuisineType(),
+    };
+
     try {
-      response = await this.geminiService.continueChat(this.chatHistory);
-      this.addAiMessage(response);
-      this.chatHistory.push({ role: 'model', parts: [{ text: response }] });
+      const restaurants = await this.geminiService.findRestaurants(this.chatHistory, filters);
+      this.addAiMessage(restaurants, 'restaurants');
+      this.chatHistory.push({ role: 'model', parts: [{ text: restaurants }] });
     } catch (error) {
       console.error('Error in follow-up query:', error);
       this.addAiMessage('Ispričavam se, naišao sam na problem prilikom obrade vašeg zahtjeva. Molimo pokušajte ponovno.');
@@ -249,17 +246,6 @@ export class AppComponent {
   private addAiMessage(text: string, messageType: 'text' | 'restaurants' = 'text'): void {
     const messageText = text ?? '';
     this.messages.update(current => [...current, { id: Date.now(), sender: 'ai', text: messageText, messageType }]);
-  }
-
-  private parseAnalysis(text: string): { text: string, imagePrompt: string | null } {
-    const imagePromptMarker = 'IMAGE_PROMPT:';
-    const index = text.indexOf(imagePromptMarker);
-    if (index !== -1) {
-        const mainText = text.substring(0, index).trim();
-        const imagePrompt = text.substring(index + imagePromptMarker.length).trim();
-        return { text: mainText, imagePrompt };
-    }
-    return { text, imagePrompt: null };
   }
 
   private scrollToBottom(): void {

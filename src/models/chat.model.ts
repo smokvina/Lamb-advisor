@@ -2,7 +2,6 @@ export interface Message {
     id: number;
     sender: 'user' | 'ai';
     text: string;
-    imageUrl?: string;
     messageType?: 'text' | 'restaurants';
 }
 

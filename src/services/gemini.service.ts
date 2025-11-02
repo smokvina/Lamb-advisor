@@ -1,49 +1,70 @@
 import { Injectable } from '@angular/core';
-import { GoogleGenAI, type ChatMessage, type GenerateContentResponse, type Part } from '@google/genai';
+import { GoogleGenAI, type ChatMessage, type GenerateContentResponse } from '@google/genai';
+
+export interface RestaurantFilters {
+  price: string;
+  rating: number;
+  cuisine: string;
+}
 
 @Injectable({
   providedIn: 'root'
 })
 export class GeminiService {
   private ai: GoogleGenAI;
-  private readonly CULINARY_SYSTEM_INSTRUCTION = `Vi ste "Lamb Advisor", vrhunski AI kuhar specijaliziran za jela od janjetine i kozletine, s toplom i zanimljivom osobnošću. Vaša je misija voditi korisnike na kulinarsko putovanje, s posebnim naglaskom na dalmatinsku janjetinu. Odgovorite na hrvatskom jeziku.
-
-Analizirajte kulinarsku scenu tražene lokacije s obzirom na janjetinu i kozletinu.
-1.  **Analiza:** Opišite najpoznatije lokalno jelo od janjetine/kozletine. Ako nema poznatog jela, opišite regionalnu kuhinju i kako bi se janjetina mogla uklopiti. Budite entuzijastični i deskriptivni.
-2.  **Usporedba:** Usporedite to jelo s dalmatinskom janjetinom s ražnja, ističući sličnosti ili razlike u pripremi, okusu i tradiciji.
-3.  **Zanimljivost:** Dodajte kratku, zanimljivu povijesnu priču ili činjenicu o jelu ili lokalnoj kulinarskoj tradiciji.
-4.  **Generiranje Slike:** Na kraju, u novom retku, napišite 'IMAGE_PROMPT:' nakon čega slijedi kratak, deskriptivan upit na engleskom jeziku za generiranje slike tog jela. Primjer: IMAGE_PROMPT: A rustic plate of Dalmatian spit-roasted lamb with potatoes and a sprig of rosemary, close-up shot.`;
   
-  private readonly RESTAURANT_SYSTEM_INSTRUCTION = `Vi ste "Lamb Advisor" i vaš zadatak je pomoći korisniku pronaći najbolje restorane. Koristite isključivo Google Maps alat.
+  private readonly RESTAURANT_SYSTEM_INSTRUCTION = `Vi ste "Lamb Advisor" - Globalni AI Vodič za Janjetinu i Kozletinu. Vaša misija je pomoći korisnicima pronaći najbolje lokalne restorane. Morate koristiti Google Search alat za pronalaženje stvarnih, provjerljivih restorana.
 
-**VAŠ PROCES MORA SLIJEDITI OVE KORAKE BEZ IZNIMKE:**
+**VAŠ PROCES ODGOVARANJA MORA STROGO SLIJEDITI OVE KORAKE:**
 
-**KORAK 1: Definiranje prioriteta pretrage**
--   Vaš **glavni i primarni cilj** je pronaći restorane koji poslužuju **"pečenu janjetinu na ražnju"**.
--   Tek ako ne pronađete ništa relevantno, možete tražiti restorane s drugim jelima od janjetine.
+**KORAK 1: Analiza Upita**
+- Analizirajte kompletnu povijest razgovora kako biste razumjeli korisnikovu lokaciju i preference.
+- Korisnikov prvi unos je lokacija. Identificirajte GRAD i DRŽAVU.
+- Primijenite sve filtere koje korisnik postavi (cijena, ocjena, vrsta jela).
 
-**KORAK 2: Progresivna pretraga po radijusu**
--   **Pretraga #1:** Pokrenite pretragu za restoranima iz KORAKA 1 unutar radijusa od **5 km**.
--   **Pretraga #2:** Ako Pretraga #1 ne da rezultate, **proširite radijus** i pokrenite novu pretragu unutar **10 km**.
--   **Pretraga #3:** Ako Pretraga #2 ne da rezultate, **proširite radijus** i pokrenite novu pretragu unutar **25 km**.
--   **Pretraga #4:** Ako Pretraga #3 ne da rezultate, **proširite radijus** i pokrenite novu pretragu unutar **50 km**.
+**KORAK 2: Inteligentna Strategija Pretrage (Interni Proces)**
+- Na temelju lokacije, interno osmislite strategiju pretrage u tri faze:
+  1. **Faza 1 (Prioritet):** Potražite specijalizirane **Pečenjarnice** koje nude janjetinu, kozletinu ili svinjetinu s ražnja. Koristite lokalizirane pojmove ('pečenjara', 'grill house', 'roastery').
+  2. **Faza 2:** Ako je rezultata malo, potražite **Restorane specijalizirane za janjetinu**, gdje su jela od janjetine dominantna na meniju.
+  3. **Faza 3:** Na kraju, potražite sve ostale visoko ocijenjene restorane koji u ponudi imaju jela od janjetine ili kozletine.
+- Koristite Google Search alat da pronađete stvarne podatke o restoranima, uključujući ocjene i recenzije.
 
-**KORAK 3: Formatiranje odgovora**
-1.  **Uvod:** Započnite odgovor tako da jasno navedete u kojem ste radijusu pronašli rezultate. Primjer: "Nakon detaljne pretrage, pronašao sam nekoliko sjajnih restorana unutar 25 km od vas:"
-2.  **Popis restorana:** Za svaki pronađeni restoran, koristite **TOČNO** ovaj format. Svaki restoran mora biti odvojen s \`---\`.
+**KORAK 3: Generiranje JSON Odgovora**
+- Vaš konačni izlaz **MORA** biti isključivo jedan validan JSON objekt. **Ne smije biti nikakvog teksta prije ili poslije JSON objekta.**
+- JSON objekt mora imati sljedeću strukturu:
+  {
+    "introduction": "string",
+    "distanceGroups": [
+      {
+        "distance": "string",
+        "restaurants": [
+          {
+            "name": "string",
+            "rating": "string",
+            "reviewsSnippet": "string",
+            "mapsQuery": "string"
+          }
+        ]
+      }
+    ]
+  }
 
-Naziv: [Naziv restorana]
-Ocjena: [Ocjena npr. 4.5/5]
-Recenzije: "[Kratak, autentičan citat ili sažetak iz stvarne korisničke recenzije]"
-MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
----
+**Upute za popunjavanje JSON-a:**
+- **introduction**: Napišite kratak, pronicljiv kulinarski uvod (2-3 rečenice) o regiji.
+- **distanceGroups**: Grupirajte pronađene restorane po radijusima (npr. 'Unutar 5 km', 'Unutar 10 km', itd.).
+  - **name**: Puno ime restorana.
+  - **rating**: Ocjena u formatu "X.X/5" ili "N/A" ako nije dostupna.
+  - **reviewsSnippet**: Kratak, autentičan sažetak iz stvarne korisničke recenzije.
+  - **mapsQuery**: Precizan upit za Google Maps (npr. "Konoba Vinko, Konjevrate, Croatia").
+
+**VAŽNO: AKO NE PRONAĐETE NITI JEDAN RESTORAN**
+- U tom slučaju, vratite JSON s porukom u uvodu i praznim nizom restorana:
+  {
+    "introduction": "Nažalost, unatoč detaljnoj pretrazi, nisam uspio pronaći restorane koji odgovaraju Vašim kriterijima na zadanoj lokaciji. Možda pokušajte s manje strogim filterima ili proširite područje pretrage.",
+    "distanceGroups": []
+  }
 `;
   
-  private readonly CHAT_SYSTEM_INSTRUCTION = `Vi ste "Lamb Advisor", vrhunski AI kuhar s toplom i zanimljivom osobnošću. Nastavite razgovor s korisnikom na prijateljski i informativan način. Odgovorite na hrvatskom jeziku.`;
-  
-  private readonly IMAGE_ANALYSIS_SYSTEM_INSTRUCTION = `Vi ste Lamb Advisor, vrhunski AI kuhar s toplom i zanimljivom osobnošću. Korisnik je podijelio sliku jela. S puno entuzijazma, analizirajte jelo. Odgovorite na hrvatskom jeziku.`;
-
-
   constructor() {
     if (!process.env.API_KEY) {
         throw new Error("API_KEY environment variable not set");
@@ -51,76 +72,39 @@ MapsQuery: [Upit za pretragu na Google Mapsu, npr. "Konoba Vinko, Konjevrate"]
     this.ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   }
 
-  async generateCulinaryAnalysis(location: string): Promise<string> {
-    const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: [{ role: 'user', parts: [{ text: location }] }],
-        config: {
-            systemInstruction: this.CULINARY_SYSTEM_INSTRUCTION,
-        }
-    });
-    return response.text ?? '';
-  }
+  async findRestaurants(chatHistory: ChatMessage[], filters?: RestaurantFilters): Promise<string> {
+      let systemInstruction = this.RESTAURANT_SYSTEM_INSTRUCTION;
 
-  async findRestaurants(chatHistory: ChatMessage[]): Promise<string> {
+      if (filters) {
+          const filterClauses: string[] = [];
+          if (filters.price && filters.price !== 'any') {
+              filterClauses.push(`- **Cjenovni rang**: ${filters.price}`);
+          }
+          if (filters.rating && filters.rating > 0) {
+              filterClauses.push(`- **Minimalna ocjena**: ${filters.rating}/5`);
+          }
+           if (filters.cuisine && filters.cuisine.trim() && filters.cuisine.trim().toLowerCase() !== 'pečenu janjetinu na ražnju') {
+              filterClauses.push(`- **Specifično jelo**: Korisnik traži isključivo restorane koji nude "${filters.cuisine.trim()}".`);
+          }
+
+
+          if (filterClauses.length > 0) {
+              const filterText = `\n**DODATNI OBAVEZNI FILTERI:**\nPrilikom pretrage, strogo se pridržavajte sljedećih filtera za svaki pronađeni restoran:\n${filterClauses.join('\n')}\n`;
+              systemInstruction = systemInstruction.replace(
+                  '**KORAK 2: Inteligentna Strategija Pretrage',
+                  `${filterText}\n**KORAK 2: Inteligentna Strategija Pretrage`
+              );
+          }
+      }
+      
       const response: GenerateContentResponse = await this.ai.models.generateContent({
           model: 'gemini-2.5-flash',
           contents: chatHistory,
           config: {
-              systemInstruction: this.RESTAURANT_SYSTEM_INSTRUCTION,
-              tools: [{googleMaps: {}}]
+              systemInstruction: systemInstruction,
+              tools: [{googleSearch: {}}]
           }
       });
       return response.text ?? '';
-  }
-
-  async continueChat(chatHistory: ChatMessage[]): Promise<string> {
-    const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: chatHistory,
-        config: {
-            systemInstruction: this.CHAT_SYSTEM_INSTRUCTION,
-            tools: [{googleSearch: {}}]
-        }
-    });
-    return response.text ?? '';
-  }
-
-  async analyzeImage(base64Image: string, prompt: string): Promise<string> {
-    const imagePart: Part = {
-        inlineData: {
-            data: base64Image,
-            mimeType: 'image/jpeg'
-        }
-    };
-    const textPart: Part = { text: prompt };
-
-    const response: GenerateContentResponse = await this.ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [textPart, imagePart] },
-        config: {
-            systemInstruction: this.IMAGE_ANALYSIS_SYSTEM_INSTRUCTION
-        }
-    });
-    return response.text ?? '';
-  }
-  
-  async generateDishImage(prompt: string): Promise<string> {
-    const response = await this.ai.models.generateImages({
-        model: 'imagen-3.0-generate-002',
-        prompt: prompt,
-        config: {
-          numberOfImages: 1,
-          outputMimeType: 'image/jpeg',
-          aspectRatio: '1:1'
-        },
-    });
-
-    if (response.generatedImages && response.generatedImages.length > 0) {
-        const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
-        return `data:image/jpeg;base64,${base64ImageBytes}`;
-    }
-    
-    return '';
   }
 }
