@@ -122,6 +122,7 @@ export class GeminiService {
         contents: chatHistory,
         config: {
             systemInstruction: this.CHAT_SYSTEM_INSTRUCTION,
+            thinkingConfig: { thinkingBudget: 0 }
         }
     });
     return response.text ?? 'Ispričavam se, ne mogu trenutno odgovoriti. Pokušajte ponovno.';
